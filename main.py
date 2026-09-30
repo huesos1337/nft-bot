@@ -1,31 +1,18 @@
 import asyncio
-import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
-# ===== НАСТРОЙКИ =====
-# Берем токен из настроек Render
-BOT_TOKEN = os.environ.get('BOT_TOKEN')
-
-# Безопасно получаем ID админа (если переменной нет или она пустая, берем значение по умолчанию)
-try:
-    admin_id_raw = os.environ.get('ADMIN_ID', '1676674007')
-    # Если строка пустая, используем дефолт, иначе пробуем превратить в число
-    ADMIN_ID = int(admin_id_raw) if admin_id_raw else 1676674007
-except ValueError:
-    ADMIN_ID = 1676674007
-
-if not BOT_TOKEN:
-    print(" ОШИБКА: Токен бота (BOT_TOKEN) не найден в настройках!")
-    exit(1)
+# ===== НАСТРОЙКИ (Жестко прописаны) =====
+BOT_TOKEN = "8896417856:AAG21QCyBN2BkADOPDcOPDQx1G-flDSNJOg"
+ADMIN_ID = 1676674007
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ===== СОСТОЯНИЯ (FSM) =====
+# ===== СОСТОЯНИЯ =====
 class RegState(StatesGroup):
     waiting_username = State()
     waiting_role = State()
@@ -61,10 +48,9 @@ def buyer_menu():
 async def cmd_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     
-    # Если уже зарегистрирован
     if user_id in users_db:
         user = users_db[user_id]
-        await message.answer(f" Привет, {user['username']}! Ты уже зарегистрирован.")
+        await message.answer(f"👋 Привет, {user['username']}! Ты уже зарегистрирован.")
         kb = seller_menu() if user['role'] == 'seller' else buyer_menu()
         await message.answer("Твое меню:", reply_markup=kb)
         return
@@ -91,7 +77,7 @@ async def process_role(message: types.Message, state: FSMContext):
         users_db[user_id] = {"username": username, "role": "buyer"}
         await message.answer("✅ Ты теперь ПОКУПАТЕЛЬ! Жди предложений.", reply_markup=buyer_menu())
     else:
-        await message.answer("Пожалуйста, нажми на одну из кнопок ниже 👇", reply_markup=role_keyboard())
+        await message.answer("Пожалуйста, нажми на кнопку ниже 👇", reply_markup=role_keyboard())
         return
     
     await state.clear()
@@ -100,9 +86,8 @@ async def process_role(message: types.Message, state: FSMContext):
 async def send_nft(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     
-    # Проверка роли
     if user_id not in users_db or users_db[user_id]['role'] != 'seller':
-        await message.answer("❌ Эта команда доступна только продавцам!")
+        await message.answer("❌ Эта команда только для продавцов!")
         return
         
     await message.answer("📸 Скидывай фото или файл твоего NFT сюда:")
@@ -117,16 +102,14 @@ async def process_nft(message: types.Message, state: FSMContext):
     file_id = message.photo[-1].file_id if is_photo else message.document.file_id
     file_type = "Фото" if is_photo else "Файл"
 
-    # Сообщение для админа
     admin_msg = (
-        f"🔔 <b>НОВЫЙ NFT!</b>\n"
+        f" <b>НОВЫЙ NFT!</b>\n"
         f"👤 Продавец: {username} (ID: {user_id})\n"
         f"📦 Тип: {file_type}\n\n"
-        f"👉 Перешли этому юзеру оплату (звезды) в ЛС!"
+        f" Перешли этому юзеру оплату (звезды) в ЛС!"
     )
     
     try:
-        # Отправляем уведомление и файл админу
         if is_photo:
             await bot.send_photo(chat_id=ADMIN_ID, photo=file_id, caption=admin_msg, parse_mode="HTML")
         else:
@@ -134,7 +117,7 @@ async def process_nft(message: types.Message, state: FSMContext):
             
         await message.answer("✅ Админ получил твой NFT! Жди оплату в личные сообщения.")
     except Exception as e:
-        await message.answer(f"❌ Произошла ошибка при отправке: {e}")
+        await message.answer(f"❌ Ошибка при отправке: {e}")
     
     await state.clear()
 
@@ -142,7 +125,7 @@ async def process_nft(message: types.Message, state: FSMContext):
 async def show_profile(message: types.Message):
     user_id = message.from_user.id
     if user_id not in users_db:
-        await message.answer("❌ Ты еще не зарегистрирован! Нажми /start")
+        await message.answer(" Ты еще не зарегистрирован! Нажми /start")
         return
         
     u = users_db[user_id]
@@ -151,7 +134,7 @@ async def show_profile(message: types.Message):
 
 # ===== ЗАПУСК =====
 async def main():
-    print("🚀 Бот успешно запущен на Render...")
+    print(" Бот запущен с жестко прописанным токеном...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
