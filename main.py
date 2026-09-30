@@ -5,7 +5,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
-# ===== НАСТРОЙКИ (Жестко прописаны) =====
+# ===== НАСТРОЙКИ =====
 BOT_TOKEN = "8896417856:AAG21QCyBN2BkADOPDcOPDQx1G-flDSNJOg"
 ADMIN_ID = 1676674007
 
@@ -19,6 +19,9 @@ class RegState(StatesGroup):
 
 class SellerState(StatesGroup):
     waiting_nft = State()
+
+class ChangeRoleState(StatesGroup):
+    waiting_new_role = State()
 
 # ===== БАЗА ДАННЫХ (в памяти) =====
 users_db = {}
@@ -39,6 +42,13 @@ def seller_menu():
 def buyer_menu():
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="👤 Мой профиль")]],
+        resize_keyboard=True
+    )
+
+def change_role_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="💼 Стать продавцом"), KeyboardButton(text="🛒 Стать покупателем")],
+                  [KeyboardButton(text="❌ Отмена")]],
         resize_keyboard=True
     )
 
@@ -70,10 +80,10 @@ async def process_role(message: types.Message, state: FSMContext):
     data = await state.get_data()
     username = data.get('username', 'Неизвестно')
     
-    if message.text == "💼 Я продавец":
+    if message.text == " Я продавец":
         users_db[user_id] = {"username": username, "role": "seller"}
         await message.answer("✅ Ты теперь ПРОДАВЕЦ! Можешь кидать NFT.", reply_markup=seller_menu())
-    elif message.text == "🛒 Я покупатель":
+    elif message.text == " Я покупатель":
         users_db[user_id] = {"username": username, "role": "buyer"}
         await message.answer("✅ Ты теперь ПОКУПАТЕЛЬ! Жди предложений.", reply_markup=buyer_menu())
     else:
@@ -82,7 +92,7 @@ async def process_role(message: types.Message, state: FSMContext):
     
     await state.clear()
 
-@dp.message(F.text == "📤 Отправить NFT")
+@dp.message(F.text == " Отправить NFT")
 async def send_nft(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     
@@ -103,7 +113,7 @@ async def process_nft(message: types.Message, state: FSMContext):
     file_type = "Фото" if is_photo else "Файл"
 
     admin_msg = (
-        f" <b>НОВЫЙ NFT!</b>\n"
+        f"🔔 <b>НОВЫЙ NFT!</b>\n"
         f"👤 Продавец: {username} (ID: {user_id})\n"
         f"📦 Тип: {file_type}\n\n"
         f" Перешли этому юзеру оплату (звезды) в ЛС!"
@@ -130,11 +140,86 @@ async def show_profile(message: types.Message):
         
     u = users_db[user_id]
     role_emoji = "💼" if u['role'] == 'seller' else "🛒"
-    await message.answer(f"👤 Твой профиль:\n\nИмя: {u['username']}\nРоль: {role_emoji} {u['role'].upper()}")
+    role_name = "ПРОДАВЕЦ" if u['role'] == 'seller' else "ПОКУПАТЕЛЬ"
+    
+    await message.answer(
+        f"👤 <b>Твой профиль:</b>\n\n"
+        f"Имя: {u['username']}\n"
+        f"Роль: {role_emoji} {role_name}\n"
+        f"ID: {user_id}\n\n"
+        f"Хочешь сменить роль? Нажми кнопку ниже!",
+        reply_markup=change_role_keyboard(),
+        parse_mode="HTML"
+    )
+
+@dp.message(F.text == "❌ Отмена")
+async def cancel_change_role(message: types.Message, state: FSMContext):
+    await state.clear()
+    user_id = message.from_user.id
+    if user_id in users_db:
+        kb = seller_menu() if users_db[user_id]['role'] == 'seller' else buyer_menu()
+        await message.answer("✅ Отменено. Вернулся в главное меню.", reply_markup=kb)
+    else:
+        await message.answer("✅ Отменено.")
+
+@dp.message(ChangeRoleState.waiting_new_role)
+async def process_new_role(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    
+    if user_id not in users_db:
+        await message.answer("❌ Ты не зарегистрирован!")
+        await state.clear()
+        return
+    
+    old_role = users_db[user_id]['role']
+    
+    if message.text == "💼 Стать продавцом":
+        new_role = "seller"
+        role_name = "ПРОДАВЕЦ"
+        emoji = "💼"
+    elif message.text == "🛒 Стать покупателем":
+        new_role = "buyer"
+        role_name = "ПОКУПАТЕЛЬ"
+        emoji = "🛒"
+    else:
+        await message.answer("❌ Выбери роль из кнопок!", reply_markup=change_role_keyboard())
+        return
+    
+    # Обновляем роль
+    users_db[user_id]['role'] = new_role
+    
+    await message.answer(
+        f"✅ Роль изменена!\n\n"
+        f"Было: {'💼 ПРОДАВЕЦ' if old_role == 'seller' else '🛒 ПОКУПАТЕЛЬ'}\n"
+        f"Стало: {emoji} {role_name}",
+        reply_markup=seller_menu() if new_role == 'seller' else buyer_menu()
+    )
+    
+    await state.clear()
+
+# Обработчик для кнопки смены роли из профиля
+@dp.message(F.text.in_(["💼 Стать продавцом", "🛒 Стать покупателем"]))
+async def start_change_role(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    if user_id not in users_db:
+        await message.answer("❌ Сначала зарегистрируйтесь через /start")
+        return
+    
+    current_role = users_db[user_id]['role']
+    current_name = "ПРОДАВЕЦ" if current_role == 'seller' else "ПОКУПАТЕЛЬ"
+    
+    await message.answer(
+        f" <b>Смена роли</b>\n\n"
+        f"Сейчас ты: {current_name}\n"
+        f"Кого хочешь стать?",
+        reply_markup=change_role_keyboard(),
+        parse_mode="HTML"
+    )
+    await state.set_state(ChangeRoleState.waiting_new_role)
 
 # ===== ЗАПУСК =====
 async def main():
-    print(" Бот запущен с жестко прописанным токеном...")
+    print(" Бот запущен с функцией смены роли...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
